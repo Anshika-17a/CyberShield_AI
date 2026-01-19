@@ -1,10 +1,10 @@
+import API_URL from '../config';
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageCircle, X, Send, Bot, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 
-// Ensure this matches your backend URL
-const API_URL = "http://127.0.0.1:5000";
+
 
 const Assistant = () => {
   const [isOpen, setIsOpen] = useState(false);

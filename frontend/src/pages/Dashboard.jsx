@@ -1,11 +1,11 @@
+import API_URL from '../config';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Globe, MessageSquare, Image as ImageIcon, AlertTriangle, CheckCircle, Loader2, Upload, Clock, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import { jsPDF } from "jspdf";
 
-// --- CONFIGURATION ---
-const API_URL = "http://127.0.0.1:5000";
+
 
 function Dashboard() {
   const [activeTab, setActiveTab] = useState('url'); // 'url' | 'text' | 'image'
