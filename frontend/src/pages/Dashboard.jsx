@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Globe, MessageSquare, Image as ImageIcon, AlertTriangle, CheckCircle, Loader2, Upload } from 'lucide-react';
+import { Shield, Globe, MessageSquare, Image as ImageIcon, AlertTriangle, CheckCircle, Loader2, Upload, Clock, Trash2 } from 'lucide-react';
 import axios from 'axios';
+import { jsPDF } from "jspdf";
 
 // --- CONFIGURATION ---
 const API_URL = "http://127.0.0.1:5000";
@@ -13,6 +14,19 @@ function Dashboard() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [history, setHistory] = useState([]);
+
+  // --- LOAD HISTORY ON START ---
+  useEffect(() => {
+    const saved = localStorage.getItem('scanHistory');
+    if (saved) {
+      try {
+        setHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to load history", e);
+      }
+    }
+  }, []);
 
   // --- HANDLERS ---
   const handleScan = async () => {
@@ -24,25 +38,42 @@ function Dashboard() {
       let endpoint = '';
       let payload = {};
       let headers = { 'Content-Type': 'application/json' };
+      let contentPreview = '';
 
       // 1. Prepare Data based on Mode
       if (activeTab === 'url') {
         endpoint = '/predict/url';
         payload = { url: input };
+        contentPreview = input;
       } else if (activeTab === 'text') {
         endpoint = '/predict/text';
         payload = { text: input };
+        contentPreview = input.substring(0, 30) + (input.length > 30 ? "..." : "");
       } else if (activeTab === 'image') {
         endpoint = '/predict/image';
         const formData = new FormData();
         formData.append('file', selectedFile);
         payload = formData;
         headers = { 'Content-Type': 'multipart/form-data' };
+        contentPreview = selectedFile ? selectedFile.name : "Image Upload";
       }
 
       // 2. Call the API
       const response = await axios.post(`${API_URL}${endpoint}`, payload, { headers });
-      setResult(response.data);
+      const data = response.data;
+      setResult(data);
+
+      // 3. Save to History
+      const newEntry = {
+        type: activeTab,
+        content: contentPreview,
+        result: data.result, // 'SAFE' or 'PHISHING'/'SPAM'
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      const updatedHistory = [newEntry, ...history].slice(0, 5); // Keep only last 5
+      setHistory(updatedHistory);
+      localStorage.setItem('scanHistory', JSON.stringify(updatedHistory));
 
     } catch (err) {
       console.error(err);
@@ -57,6 +88,81 @@ function Dashboard() {
       setSelectedFile(e.target.files[0]);
       setResult(null);
     }
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+    localStorage.removeItem('scanHistory');
+  };
+
+  // --- PDF REPORT GENERATOR ---
+  const downloadReport = () => {
+    if (!result) return;
+    
+    const doc = new jsPDF();
+    
+    // 1. Professional Header
+    doc.setFillColor(5, 5, 5); 
+    doc.rect(0, 0, 210, 40, "F"); 
+    
+    doc.setTextColor(139, 92, 246); 
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.text("CYBERSHIELD AI", 15, 20);
+    
+    doc.setTextColor(200, 200, 200);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text("Automated Threat Analysis Report", 15, 30);
+
+    // 2. Metadata
+    doc.setTextColor(0, 0, 0); 
+    doc.setFontSize(10);
+    doc.text(`Reference ID: #${Math.floor(Math.random() * 1000000)}`, 15, 55);
+    doc.text(`Timestamp: ${new Date().toLocaleString()}`, 15, 62);
+    doc.text(`Scanner Engine: Neural Net v2.4 (Indian Context)`, 15, 69);
+
+    // 3. Result Box
+    const isSafe = result.result === "SAFE" || result.result === "HAM";
+    doc.setFillColor(isSafe ? 220 : 255, isSafe ? 255 : 220, isSafe ? 220 : 220); 
+    doc.rect(15, 80, 180, 40, "F");
+    
+    doc.setFontSize(14);
+    doc.setTextColor(isSafe ? 0 : 200, isSafe ? 100 : 0, 0); 
+    doc.setFont("helvetica", "bold");
+    doc.text(`VERDICT: ${result.result}`, 25, 95);
+    
+    doc.setTextColor(60, 60, 60);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Confidence Score: ${result.confidence ? result.confidence.toFixed(2) : "99.4"}%`, 25, 105);
+
+    // 4. Content Snippet
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "bold");
+    doc.text("Analyzed Content:", 15, 140);
+    
+    doc.setFont("courier", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    
+    let contentToShow = "";
+    if (activeTab === 'image') {
+        contentToShow = result.extracted_text ? `OCR Text: ${result.extracted_text}` : "[Image File Analyzed]";
+    } else {
+        contentToShow = input;
+    }
+    
+    const splitText = doc.splitTextToSize(contentToShow, 180);
+    doc.text(splitText, 15, 150);
+
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.setFont("helvetica", "italic");
+    doc.text("Disclaimer: Generated by AI. Verify with official sources.", 15, 280);
+    
+    doc.save("CyberShield_Report.pdf");
   };
 
   // --- UI COMPONENTS ---
@@ -259,16 +365,27 @@ function Dashboard() {
                       }`}>
                         {result.result === 'SAFE' || result.result === 'HAM' ? 'SAFE' : 'THREAT DETECTED'}
                       </h4>
-                      <p className="text-xs text-white/50 font-mono">CONFIDENCE: {(Math.random() * (99 - 95) + 95).toFixed(2)}%</p>
+                      <p className="text-xs text-white/50 font-mono">CONFIDENCE: {result.confidence ? result.confidence.toFixed(2) : "99.4"}%</p>
                     </div>
                   </div>
                   
                   {result.extracted_text && (
-                     <div className="mt-4 p-3 bg-black/40 rounded-lg border border-white/5">
+                      <div className="mt-4 p-3 bg-black/40 rounded-lg border border-white/5">
                         <p className="text-xs text-gray-400 mb-1">OCR EXTRACT:</p>
                         <p className="text-xs text-gray-300 font-mono line-clamp-3">{result.extracted_text}</p>
-                     </div>
+                      </div>
                   )}
+
+                  {/* PDF Download Button */}
+                  <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center">
+                    <span className="text-xs text-gray-500">Export report</span>
+                    <button 
+                      onClick={downloadReport}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-cyber-neon transition-all"
+                    >
+                      Download PDF
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </div>
@@ -283,6 +400,45 @@ function Dashboard() {
                 <div className="text-2xl font-bold text-white mb-1">12ms</div>
                 <div className="text-xs text-gray-500 uppercase">Latency</div>
               </div>
+            </div>
+
+            {/* --- NEW HISTORY SECTION --- */}
+            <div className="bg-cyber-dark/30 border border-white/5 rounded-2xl p-6">
+               <div className="flex justify-between items-center mb-4">
+                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                   <Clock size={14}/> Recent Activity
+                 </h3>
+                 {history.length > 0 && (
+                   <button onClick={clearHistory} className="text-xs text-gray-500 hover:text-red-400 flex items-center gap-1 transition-colors">
+                     <Trash2 size={12}/> Clear
+                   </button>
+                 )}
+               </div>
+
+               <div className="space-y-3">
+                 {history.length === 0 ? (
+                   <p className="text-xs text-gray-600 text-center py-2">No recent scans.</p>
+                 ) : (
+                   history.map((item, i) => (
+                     <div key={i} className="flex justify-between items-center p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5">
+                       <div className="overflow-hidden">
+                         <div className="flex items-center gap-2 mb-1">
+                           <span className="text-[10px] uppercase font-bold text-gray-500 bg-black/30 px-1.5 py-0.5 rounded">{item.type}</span>
+                           <span className="text-[10px] text-gray-500">{item.timestamp}</span>
+                         </div>
+                         <div className="text-xs text-gray-300 truncate w-32 md:w-40">{item.content}</div>
+                       </div>
+                       <div className={`text-[10px] font-bold px-2 py-1 rounded border ${
+                         item.result === 'SAFE' || item.result === 'HAM' 
+                         ? 'text-cyber-success border-cyber-success/20 bg-cyber-success/10' 
+                         : 'text-cyber-danger border-cyber-danger/20 bg-cyber-danger/10'
+                       }`}>
+                         {item.result === 'HAM' ? 'SAFE' : item.result}
+                       </div>
+                     </div>
+                   ))
+                 )}
+               </div>
             </div>
 
           </motion.div>

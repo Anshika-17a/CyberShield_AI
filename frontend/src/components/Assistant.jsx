@@ -1,98 +1,49 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageCircle, X, Send, Bot } from 'lucide-react';
+import { MessageCircle, X, Send, Bot, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import axios from 'axios';
+
+// Ensure this matches your backend URL
+const API_URL = "http://127.0.0.1:5000";
 
 const Assistant = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
-    { text: "Hello! I am CyberBot. I support 8+ Indian languages. How can I help?", from: 'bot' }
+    { text: "Hello! I am CyberShield AI. Ask me anything about phishing, malware, or online safety.", from: 'bot' }
   ]);
   const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-  useEffect(scrollToBottom, [messages]);
 
-  // --- MULTILINGUAL BRAIN ---
-  const languageResponses = {
-    // Tamil
-    tamil: {
-      keywords: ['vanakkam', 'udavi', 'tamil', 'eppadi'],
-      reply: "வணக்கம்! இணைப்புகளை ஸ்கேன் செய்ய 'Check for Yourself' ஐ கிளிக் செய்யவும். உதவிக்கு 1930 ஐ அழைக்கவும்."
-    },
-    // Telugu
-    telugu: {
-      keywords: ['namaskaram', 'sahayam', 'telugu', 'ela'],
-      reply: "నమస్కారం! లింక్‌లను స్కాన్ చేయడానికి 'Check for Yourself' క్లిక్ చేయండి. సహాయం కోసం 1930కి కాల్ చేయండి."
-    },
-    // Hindi
-    hindi: {
-      keywords: ['namaste', 'madad', 'hindi', 'kaise', 'kya'],
-      reply: "नमस्ते! स्कैनिंग टूल का उपयोग करने के लिए 'Check for Yourself' पर क्लिक करें। सहायता के लिए 1930 डायल करें।"
-    },
-    // Bengali
-    bengali: {
-      keywords: ['namaskar', 'sahajjo', 'bangla', 'kemon'],
-      reply: "নমস্কার! লিঙ্ক স্ক্যান করতে 'Check for Yourself' এ ক্লিক করুন। সাহায্যের জন্য 1930 ডায়াল করুন।"
-    },
-    // Kannada
-    kannada: {
-      keywords: ['namaskara', 'sahaya', 'kannada', 'hege'],
-      reply: "ನಮಸ್ಕಾರ! ಲಿಂಕ್‌ಗಳನ್ನು ಸ್ಕ್ಯಾನ್ ಮಾಡಲು 'Check for Yourself' ಕ್ಲಿಕ್ ಮಾಡಿ. ಸಹಾಯಕ್ಕಾಗಿ 1930 ಕರೆ ಮಾಡಿ."
-    },
-    // Malayalam
-    malayalam: {
-      keywords: ['namaskaram', 'sahayam', 'malayalam', 'engane'],
-      reply: "നമസ്കാരം! ലിങ്കുകൾ സ്കാൻ ചെയ്യാൻ 'Check for Yourself' ക്ലിക്ക് ചെയ്യുക. സഹായത്തിന് 1930 വിളിക്കുക."
-    },
-    // Marathi
-    marathi: {
-      keywords: ['namaskar', 'madat', 'marathi', 'kase'],
-      reply: "नमस्कार! लिंक स्कॅन करण्यासाठी 'Check for Yourself' वर क्लिक करा. मदतीसाठी 1930 डायल करा."
-    },
-    // Gujarati
-    gujarati: {
-      keywords: ['namaste', 'madad', 'gujarati', 'kem'],
-      reply: "નમસ્તે! લિંક સ્કેન કરવા માટે 'Check for Yourself' પર ક્લિક કરો. મદદ માટે 1930 ડાયલ કરો."
-    }
-  };
+  useEffect(scrollToBottom, [messages, isTyping]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim()) return;
     
+    // 1. Add User Message
     const userMsg = input;
     setMessages(prev => [...prev, { text: userMsg, from: 'user' }]);
     setInput("");
+    setIsTyping(true); // Show typing indicator
 
-    setTimeout(() => {
-      const lower = userMsg.toLowerCase();
-      let reply = "I can help you navigate. Try asking in your local language like 'Vanakkam', 'Namaskaram', or 'Help'.";
-      let matchFound = false;
-
-      // 1. Check Specific Languages
-      for (const lang in languageResponses) {
-        if (languageResponses[lang].keywords.some(k => lower.includes(k))) {
-          reply = languageResponses[lang].reply;
-          matchFound = true;
-          break;
-        }
-      }
-
-      // 2. English Fallbacks if no language match
-      if (!matchFound) {
-        if (lower.includes('scan') || lower.includes('check') || lower.includes('demo')) {
-          reply = "To scan a link or message, click the 'Check for Yourself' button on the Home page.";
-        } else if (lower.includes('news') || lower.includes('fraud') || lower.includes('help')) {
-          reply = "For fraud alerts and expert helplines, please visit our 'Education & Safety' page.";
-        } else if (lower.includes('police') || lower.includes('number')) {
-          reply = "Please dial 1930 immediately for the National Cyber Crime Helpline.";
-        }
-      }
-
-      setMessages(prev => [...prev, { text: reply, from: 'bot' }]);
-    }, 800);
+    try {
+      // 2. Call the Smart Backend API
+      const response = await axios.post(`${API_URL}/chat`, { message: userMsg });
+      
+      // 3. Add AI Response
+      setMessages(prev => [...prev, { text: response.data.reply, from: 'bot' }]);
+      
+    } catch (error) {
+      console.error("Chat Error:", error);
+      setMessages(prev => [...prev, { text: "Network error. Please check your backend connection.", from: 'bot' }]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (
@@ -103,41 +54,67 @@ const Assistant = () => {
             initial={{ opacity: 0, y: 20, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            className="mb-4 w-80 bg-cyber-dark border border-white/20 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            className="mb-4 w-80 md:w-96 bg-cyber-dark border border-white/20 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           >
+            {/* Header */}
             <div className="bg-cyber-neon p-4 flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Bot className="text-white" size={20}/>
-                <span className="font-bold text-white">Cyber Assistant</span>
+                <div>
+                  <div className="font-bold text-white text-sm">CyberShield Intelligence</div>
+                  <div className="text-[10px] text-white/80 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span> Online
+                  </div>
+                </div>
               </div>
               <button onClick={() => setIsOpen(false)}><X size={18} className="text-white hover:text-gray-200"/></button>
             </div>
             
-            <div className="h-72 p-4 overflow-y-auto space-y-3 bg-black/50">
+            {/* Chat Area */}
+            <div className="h-80 p-4 overflow-y-auto space-y-3 bg-black/50">
               {messages.map((m, i) => (
                 <div key={i} className={`flex ${m.from === 'bot' ? 'justify-start' : 'justify-end'}`}>
-                  <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed ${
+                  <div className={`max-w-[85%] p-3 rounded-xl text-sm leading-relaxed shadow-sm ${
                     m.from === 'bot' 
-                    ? 'bg-white/10 text-gray-200 rounded-tl-none' 
+                    ? 'bg-white/10 text-gray-200 rounded-tl-none border border-white/5' 
                     : 'bg-cyber-neon text-white rounded-tr-none'
                   }`}>
-                    {m.text}
+                    {/* Render markdown-style bolding if AI sends it */}
+                    {m.text.split('**').map((part, i) => 
+                      i % 2 === 1 ? <strong key={i}>{part}</strong> : part
+                    )}
                   </div>
                 </div>
               ))}
+              
+              {/* Typing Indicator */}
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-white/10 text-gray-400 p-3 rounded-xl rounded-tl-none border border-white/5 flex items-center gap-1 w-16">
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></span>
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+                  </div>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Input Area */}
             <div className="p-3 bg-cyber-dark border-t border-white/10 flex gap-2">
               <input 
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="Type here (e.g., Vanakkam)..."
+                placeholder="Ask about threats, safety..."
                 className="flex-1 bg-black/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-cyber-neon placeholder-gray-500"
               />
-              <button onClick={handleSend} className="p-2 bg-cyber-neon rounded-lg text-white hover:bg-cyber-accent transition-colors">
-                <Send size={16}/>
+              <button 
+                onClick={handleSend} 
+                disabled={isTyping}
+                className="p-2 bg-cyber-neon rounded-lg text-white hover:bg-cyber-accent transition-colors disabled:opacity-50"
+              >
+                {isTyping ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
               </button>
             </div>
           </motion.div>
@@ -148,7 +125,6 @@ const Assistant = () => {
         onClick={() => setIsOpen(!isOpen)}
         className="group p-4 bg-cyber-neon hover:bg-cyber-accent rounded-full shadow-lg shadow-cyber-neon/30 text-white transition-all hover:scale-110 flex items-center justify-center relative"
       >
-        {/* Notification Ping Animation */}
         <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
         <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
         <MessageCircle size={28} />
