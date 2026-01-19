@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 # --- AI CONFIGURATION ---
 # We use the specific model your API key has access to (from your test results)
-GEMINI_API_KEY = "AIzaSyD4ddx0sQYyEYP8kdQ1HVwOE8Z55ox7zW0" 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 ai_model = genai.GenerativeModel('gemini-2.5-flash-preview-09-2025')
 
