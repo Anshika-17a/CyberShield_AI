@@ -15,7 +15,7 @@ Markdown
 
 ### 1. 🧠 AI-Powered Threat Detection
 * **URL Scanner:** Detects malicious domains using entropy analysis and keyword heuristics (99.4% Accuracy).
-* **Text Analysis:** Context-aware NLP model trained on Indian scam patterns (e.g., "Lottery", "KYC Update", "Electricity Bill").
+* **Text Analysis:** Context-aware NLP model trained on scam patterns (e.g., "Lottery", "KYC Update", "Electricity Bill").
 * **OCR Vision:** Extracts text from screenshots/images to flag hidden visual threats.
 
 ### 2. 🤖 Generative AI Assistant (Gemini)
@@ -31,6 +31,8 @@ Markdown
 * **Forensic PDF Reports:** Auto-generates downloadable reports for legal/official use.
 * **Local History:** Saves recent scans for quick reference.
 * **Live Dashboard:** Real-time latency tracking and confidence scores.
+
+
 
 ---
 
@@ -53,6 +55,21 @@ Markdown
 * Python 3.9+
 * Node.js 16+
 * Tesseract OCR installed on your system.
+
+### 📂 Dataset Information
+
+The models in this project were trained on the following datasets:
+
+1.  **Phishing URLs:** A collection of 500,000+ malicious and safe URLs.
+2.  **SMS Spam Collection:** A public set of SMS labeled messages.
+
+> **Note:** Due to file size limits, the raw datasets are hosted externally.
+> 📥 **[Download the Dataset Here](https://drive.google.com/drive/folders/1myNofNpQEkxZ-V2-HzqrumnpiqD92kwY?usp=sharing)**
+
+### **Setup Instructions:**
+1. Download the zip file from the link above.
+2. Extract it.
+3. Place the `.csv` files inside the `dataset/` folder in this project.
 
 ### 1. Clone the Repository
 ```bash
