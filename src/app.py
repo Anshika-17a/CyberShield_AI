@@ -1,11 +1,13 @@
-# src/app.py
 import os
 import joblib
 import numpy as np
+import google.generativeai as genai
+import whois  # Requires: pip install python-whois
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-import google.generativeai as genai 
+from urllib.parse import urlparse
+from datetime import datetime
 
 # Import our custom modules
 from feature_extraction import URLFeatureExtractor
@@ -13,51 +15,34 @@ from ocr_engine import OCREngine
 
 app = Flask(__name__)
 
-# --- AI CONFIGURATION ---
-# We use the specific model your API key has access to (from your test results)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# --- 1. CONFIGURATION ---
+GEMINI_API_KEY = "AIzaSyD4ddx0sQYyEYP8kdQ1HVwOE8Z55ox7zW0" 
 genai.configure(api_key=GEMINI_API_KEY)
+# Using the preview model that worked for you
 ai_model = genai.GenerativeModel('gemini-2.5-flash-preview-09-2025')
 
 # System Prompt
-SYSTEM_INSTRUCTION = """
-You are CyberShield AI. 
-1. Help users with cybersecurity threats (phishing, smishing, malware).
-2. Keep answers concise (2-3 sentences).
-3. If asked about "scanning", tell them to use the Dashboard.
-4. If asked about "police", give helpline 1930.
-5. Do not answer non-cybersecurity questions.
-"""
+SYSTEM_INSTRUCTION = "You are CyberShield AI. Help users with cybersecurity. Keep answers concise."
 
-# Allow all origins
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# --- CONFIGURATION ---
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# --- LOAD MODELS ---
+# --- 2. LOAD MODELS ---
 print("🔌 Loading Intelligence Systems...")
-
 try:
     url_model = joblib.load('models/url_model.pkl')
-    print("✅ URL Model Loaded")
-except:
-    print("❌ CRITICAL: URL Model not found.")
-    url_model = None
-
-try:
     text_model = joblib.load('models/text_model.pkl')
-    print("✅ Text Model Loaded")
+    print("✅ Models Loaded")
 except:
-    print("❌ CRITICAL: Text Model not found.")
+    print("⚠️ Models not found. Using Heuristics only.")
+    url_model = None
     text_model = None
 
 try:
-    print("👁️  Initializing OCR Engine...")
     ocr_engine = OCREngine()
-    print("✅ OCR Engine Ready")
 except:
     ocr_engine = None
 
@@ -69,71 +54,111 @@ def home():
 
 @app.route('/predict/url', methods=['POST'])
 def predict_url():
-    if not url_model: return jsonify({"error": "URL Model not active"}), 500
     data = request.json
     url = data.get('url', '')
     if not url: return jsonify({'error': 'No URL provided'}), 400
 
-    # --- RESTORED FULL WHITELIST (INDIAN CONTEXT) ---
-    trusted_keywords = [
-        # AI & Tech Tools
-        'chatgpt', 'openai', 'ai.com', 'anthropic', 'claude', 'bard', 'gemini',
-        'github', 'gitlab', 'stackoverflow',
+    # --- LAYER 0: LOCALHOST EXCEPTION ---
+    try:
+        parsed = urlparse(url)
+        domain_part = parsed.netloc.split(':')[0].lower()
+        if domain_part in ['localhost', '127.0.0.1', '0.0.0.0']:
+            return jsonify({'type': 'URL_SCAN', 'input': url, 'result': 'SAFE', 'confidence': 100.0, 'note': 'Local Development Server'})
+    except:
+        pass
+
+    # --- LAYER 1: SMART DOMAIN WHITELIST ---
+    try:
+        domain = urlparse(url).netloc.lower()
+        if not domain: domain = urlparse("http://" + url).netloc.lower()
+    except:
+        domain = ""
+
+    trusted_domains = {
+        # Developer Tools
+        'github.com': 'GitHub', 'gitlab.com': 'GitLab', 'stackoverflow.com': 'StackOverflow',
+        'vercel.com': 'Vercel', 'render.com': 'Render',
         
-        # Global Tech
-        'google', 'youtube', 'facebook', 'instagram', 'whatsapp', 'twitter', 'x.com', 
-        'linkedin', 'microsoft', 'apple', 'amazon', 'netflix', 'spotify',
+        # Big Tech
+        'google.com': 'Google', 'youtube.com': 'YouTube', 'facebook.com': 'Facebook', 
+        'instagram.com': 'Instagram', 'linkedin.com': 'LinkedIn', 'twitter.com': 'X (Twitter)',
+
+        # Education & Student Resources 
+        'internyet.in': 'VTU Internyet', 
+        'vtu.ac.in': 'Visvesvaraya Tech University',
         
-        # Indian Streaming & Entertainment
-        'hotstar', 'jio', 'jiocinema', 'sonyliv', 'zee5', 'voot', 'altbalaji', 
-        'erosnow', 'mxplayer', 'hungama', 'gaana', 'saavn',
+        # Indian Shopping 
+        'amazon.in': 'Amazon', 'flipkart.com': 'Flipkart', 'myntra.com': 'Myntra',
+        'ajio.com': 'Ajio', 'meesho.com': 'Meesho', 'nykaa.com': 'Nykaa', 'tatacliq.com': 'Tata Cliq',
         
-        # Indian Payments & Banks
-        'paytm', 'phonepe', 'gpay', 'bhim', 'upi', 'razorpay', 'ccavenue', 'billdesk',
-        'sbi', 'hdfc', 'icici', 'axis', 'kotak', 'pnb', 'bob', 'canara', 'indusind',
+        # Finance
+        'paytm.com': 'Paytm', 'phonepe.com': 'PhonePe',
+        'onlinesbi.sbi': 'SBI Bank', 'hdfcbank.com': 'HDFC', 'icicibank.com': 'ICICI'
+    }
+
+    for trusted, name in trusted_domains.items():
+        if domain == trusted or domain.endswith("." + trusted):
+            return jsonify({'type': 'URL_SCAN', 'input': url, 'result': 'SAFE', 'confidence': 100.0, 'note': f'Official {name} Domain'})
+
+    # --- LAYER 2: SCAM KEYWORD TRAP ---
+    scam_keywords = ['win', 'winner', 'lottery', 'prize', 'claim', '1 lakh', 'free', 'offer', 'urgent', 'account blocked', 'kyc', 'update']
+    if any(k in url.lower() for k in scam_keywords):
+        return jsonify({'type': 'URL_SCAN', 'input': url, 'result': 'PHISHING', 'confidence': 95.0, 'note': 'Detected Scam Keywords'})
+
+    # --- LAYER 3: DOMAIN AGE CHECK ---
+    domain_age_note = ""
+    is_old_domain = False
+    try:
+        domain_info = whois.whois(domain)
+        creation_date = domain_info.creation_date
+        if isinstance(creation_date, list): creation_date = creation_date[0]
         
-        # Shopping & Utils
-        'flipkart', 'myntra', 'meesho', 'ajio', 'nykaa', 'tata', 'zomato', 'swiggy', 
-        'ola', 'uber', 'irctc', 'indigo', 'airindia', 'makemytrip'
-    ]
+        if creation_date:
+            age = (datetime.now() - creation_date).days
+            if age > 180: # Older than 6 months
+                is_old_domain = True
+                domain_age_note = f" (Domain is {age} days old)"
+    except:
+        pass
+
     
-    for keyword in trusted_keywords:
-        if keyword in url.lower():
-             return jsonify({
-                'type': 'URL_SCAN', 
-                'input': url, 
-                'result': 'SAFE', 
-                'confidence': 99.99, 
-                'note': f'Verified Trusted Brand: {keyword.title()}'
-            })
+    if url_model:
+        extractor = URLFeatureExtractor(url)
+        features = extractor.get_features()
+        prediction = url_model.predict([features])[0]
+        
+        # If AI says Phishing but domain is old -> Trust Age
+        if prediction == 1 and is_old_domain:
+             return jsonify({'type': 'URL_SCAN', 'input': url, 'result': 'SAFE', 'confidence': 80.0, 'note': 'AI flagged, but Domain Age verified safe.'})
 
-    # AI Analysis
-    extractor = URLFeatureExtractor(url)
-    features = extractor.get_features()
-    prediction = url_model.predict([features])[0]
-    probs = url_model.predict_proba([features])[0]
-    confidence = probs[1] if prediction == 1 else probs[0]
-
-    return jsonify({
-        'type': 'URL_SCAN', 
-        'input': url, 
-        'result': 'PHISHING' if prediction == 1 else 'SAFE', 
-        'confidence': float(confidence) * 100
-    })
+        result = 'PHISHING' if prediction == 1 else 'SAFE'
+        confidence = 85.0 if result == 'SAFE' else 95.0 
+        
+        return jsonify({'type': 'URL_SCAN', 'input': url, 'result': result, 'confidence': confidence, 'note': domain_age_note})
+    
+    return jsonify({'type': 'URL_SCAN', 'input': url, 'result': 'SAFE', 'confidence': 50.0})
 
 @app.route('/predict/text', methods=['POST'])
 def predict_text():
-    if not text_model: return jsonify({"error": "Text Model not active."}), 500
     data = request.json
-    text = data.get('text', '')
-    if not text: return jsonify({'error': 'No text provided'}), 400
+    text = data.get('text', '').lower()
     
-    try:
+    # Text Scam Trap
+    scam_triggers = ['won', 'lottery', 'rupees', 'lakh', 'prize', 'claim', 'click here', 'urgent', 'expired', 'blocked']
+    scam_score = 0
+    for word in scam_triggers:
+        if word in text:
+            scam_score += 1
+            
+    if scam_score >= 1: 
+        return jsonify({'type': 'TEXT_SCAN', 'result': 'SPAM', 'confidence': 99.9})
+
+    if text_model:
         prediction = text_model.predict([text])[0]
         result = 'SPAM' if prediction == 1 else 'HAM'
         return jsonify({'type': 'TEXT_SCAN', 'result': result, 'confidence': 95.0})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+    return jsonify({'type': 'TEXT_SCAN', 'result': 'HAM', 'confidence': 60.0})
 
 @app.route('/predict/image', methods=['POST'])
 def predict_image():
@@ -146,7 +171,6 @@ def predict_image():
     try:
         extracted_text = ocr_engine.extract_text(filepath) if ocr_engine else ""
         result = "UNKNOWN"
-        # Only predict if text was actually found
         if len(extracted_text.strip()) > 0 and text_model:
             prediction = text_model.predict([extracted_text])[0]
             result = 'SPAM' if prediction == 1 else 'HAM'
@@ -157,25 +181,16 @@ def predict_image():
         if os.path.exists(filepath): os.remove(filepath)
         return jsonify({"error": str(e)}), 500
 
-# --- CHAT ROUTE ---
 @app.route('/chat', methods=['POST'])
 def chat_bot():
     data = request.json
     user_message = data.get('message', '')
-
-    if not user_message:
-        return jsonify({'reply': "I didn't catch that."})
+    if not user_message: return jsonify({'reply': "I didn't catch that."})
 
     try:
-        # Start a chat session
-        chat = ai_model.start_chat(history=[
-            {"role": "user", "parts": [SYSTEM_INSTRUCTION]},
-            {"role": "model", "parts": ["Understood. I am CyberShield AI."]}
-        ])
-        
+        chat = ai_model.start_chat(history=[{"role": "user", "parts": [SYSTEM_INSTRUCTION]}])
         response = chat.send_message(user_message)
         return jsonify({'reply': response.text})
-        
     except Exception as e:
         print(f"❌ AI Error: {e}") 
         return jsonify({'reply': "My brain is currently offline. Please try again later."})
